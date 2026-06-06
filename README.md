@@ -12,12 +12,6 @@
 - localStorage 保存自選股與警示
 - 支援手機瀏覽，可加入主畫面
 
-## 使用方式
-
-1. 把所有檔案上傳到 GitHub Repository。
-2. 到 Settings → Pages。
-3. Source 選 main branch，資料夾選 root。
-4. 等 GitHub Pages 產生網址後，用手機打開即可。
 
 ## 資料說明
 
