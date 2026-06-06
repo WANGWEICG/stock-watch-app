@@ -79,18 +79,20 @@ function sparkline(arr){
   return `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`;
 }
 
+
 async function finmindFetch(dataset, symbol){
   if(!finmindToken) throw new Error('請先貼上 FinMind Token');
+  // v4 修正：Token 改放 URL 參數，不使用 Authorization header，避免 GitHub Pages 手機瀏覽器 CORS 預檢失敗。
   const params = new URLSearchParams({
     dataset,
     data_id: symbol,
-    start_date: startDate(10),
-    end_date: endDate()
+    start_date: startDate(12),
+    end_date: endDate(),
+    token: finmindToken
   });
-  const res = await fetch(`https://api.finmindtrade.com/api/v4/data?${params.toString()}`, {
-    headers: { Authorization: `Bearer ${finmindToken}` }
-  });
-  if(!res.ok) throw new Error(`API 錯誤 ${res.status}`);
+  const url = `https://api.finmindtrade.com/api/v4/data?${params.toString()}`;
+  const res = await fetch(url, { method:'GET', cache:'no-store' });
+  if(!res.ok) throw new Error(`FinMind HTTP ${res.status}`);
   const json = await res.json();
   if(json.status !== 200 && json.status !== '200') throw new Error(json.msg || 'FinMind 回傳錯誤');
   const data = json.data || [];
@@ -98,23 +100,62 @@ async function finmindFetch(dataset, symbol){
   return data;
 }
 
-async function fetchQuote(item){
-  const dataset = item.market === 'TW' ? 'TaiwanStockPrice' : 'USStockPrice';
-  const data = await finmindFetch(dataset, item.symbol);
-  const rows = data.map(r=>({
-    date: r.date,
-    close: Number(r.close),
-    high: Number(r.max ?? r.high),
-    low: Number(r.min ?? r.low),
-    open: Number(r.open)
-  })).filter(r=>Number.isFinite(r.close) && Number.isFinite(r.high) && Number.isFinite(r.low));
+async function fetchUSFromStooq(symbol){
+  // 美股備援：不用 Token。Stooq 代號格式 TSLA.US、SPY.US、QQQ.US。
+  const directUrl = `https://stooq.com/q/d/l/?s=${encodeURIComponent(symbol.toLowerCase()+'.us')}&i=d`;
+  const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(directUrl)}`;
+  let text = '';
+  try {
+    const res = await fetch(directUrl, {cache:'no-store'});
+    if(!res.ok) throw new Error('direct fail');
+    text = await res.text();
+  } catch(_) {
+    const res = await fetch(proxyUrl, {cache:'no-store'});
+    if(!res.ok) throw new Error(`美股備援 HTTP ${res.status}`);
+    text = await res.text();
+  }
+  const lines = text.trim().split(/\r?\n/).filter(Boolean);
+  if(lines.length < 3) throw new Error('美股資料不足');
+  const rows = lines.slice(1).map(line=>{
+    const [date, open, high, low, close] = line.split(',');
+    return {date, open:Number(open), high:Number(high), low:Number(low), close:Number(close)};
+  }).filter(r=>Number.isFinite(r.close) && Number.isFinite(r.high) && Number.isFinite(r.low));
+  if(rows.length < 2) throw new Error('美股資料筆數不足');
+  return rows.slice(-260);
+}
+
+function rowsToQuote(rows){
   rows.sort((a,b)=>a.date.localeCompare(b.date));
-  if(rows.length < 2) throw new Error('資料筆數不足');
   const last = rows[rows.length-1];
   const prev = rows[rows.length-2];
   const close = rows.map(r=>r.close), high = rows.map(r=>r.high), low = rows.map(r=>r.low);
   const tech = calcTech(close, high, low);
   return { price:last.close, previousClose:prev.close, change:last.close-prev.close, changePercent:(last.close-prev.close)/prev.close*100, ...tech, closeHistory:close, date:last.date };
+}
+
+async function fetchQuote(item){
+  if(item.market === 'TW'){
+    const data = await finmindFetch('TaiwanStockPrice', item.symbol);
+    const rows = data.map(r=>({
+      date: r.date,
+      close: Number(r.close),
+      high: Number(r.max ?? r.high),
+      low: Number(r.min ?? r.low),
+      open: Number(r.open)
+    })).filter(r=>Number.isFinite(r.close) && Number.isFinite(r.high) && Number.isFinite(r.low));
+    if(rows.length < 2) throw new Error('台股資料筆數不足');
+    return rowsToQuote(rows);
+  }
+  // 先用 FinMind；不行就自動改用 Stooq 備援。
+  try{
+    const data = await finmindFetch('USStockPrice', item.symbol);
+    const rows = data.map(r=>({date:r.date, close:Number(r.close), high:Number(r.max ?? r.high), low:Number(r.min ?? r.low), open:Number(r.open)}))
+      .filter(r=>Number.isFinite(r.close) && Number.isFinite(r.high) && Number.isFinite(r.low));
+    if(rows.length < 2) throw new Error('FinMind 美股資料不足');
+    return rowsToQuote(rows);
+  }catch(e){
+    return rowsToQuote(await fetchUSFromStooq(item.symbol));
+  }
 }
 
 function calcTech(close, high, low){
@@ -167,7 +208,7 @@ async function loadAll(){
   }
   lastUpdatedEl.textContent = twDate();
   dataStatusEl.textContent = ok === watchList.length ? '真實資料已更新' : `部分成功 ${ok}/${watchList.length}`;
-  marketNoteEl.textContent = '資料來自 FinMind；顯示最後交易日資料，非券商下單即時報價';
+  marketNoteEl.textContent = '台股資料來自 FinMind；美股若 FinMind 失敗會自動用備援日線。顯示最後交易日，非券商下單即時報價。';
   updateKdAlert(quote0050);
 }
 
