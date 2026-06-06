@@ -1,5 +1,3 @@
-# 兄弟看盤 Pro v4
+# 兄弟看盤 Pro v5
 
-修正版：FinMind Token 以 URL 參數送出，避免 GitHub Pages / iPhone Safari 常見 CORS 預檢失敗。
-
-上傳 index.html、style.css、app.js、manifest.json、icon.svg 到 GitHub Pages 根目錄。
+修正版：加入 API 備援通道與錯誤顯示。請解壓縮後覆蓋 GitHub Pages 根目錄。

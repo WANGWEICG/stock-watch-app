@@ -80,9 +80,29 @@ function sparkline(arr){
 }
 
 
+async function fetchTextWithFallback(url){
+  const tries = [
+    { name:'direct', url },
+    { name:'allorigins', url:`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}` },
+    { name:'corsproxy', url:`https://corsproxy.io/?${encodeURIComponent(url)}` }
+  ];
+  const errors = [];
+  for(const t of tries){
+    try{
+      const res = await fetch(t.url, { method:'GET', cache:'no-store' });
+      if(!res.ok) throw new Error(`${t.name} HTTP ${res.status}`);
+      const txt = await res.text();
+      if(!txt || txt.trim().startsWith('<')) throw new Error(`${t.name} 回傳不是資料`);
+      return txt;
+    }catch(e){
+      errors.push(e.message || String(e));
+    }
+  }
+  throw new Error(errors.join('｜'));
+}
+
 async function finmindFetch(dataset, symbol){
   if(!finmindToken) throw new Error('請先貼上 FinMind Token');
-  // v4 修正：Token 改放 URL 參數，不使用 Authorization header，避免 GitHub Pages 手機瀏覽器 CORS 預檢失敗。
   const params = new URLSearchParams({
     dataset,
     data_id: symbol,
@@ -91,9 +111,9 @@ async function finmindFetch(dataset, symbol){
     token: finmindToken
   });
   const url = `https://api.finmindtrade.com/api/v4/data?${params.toString()}`;
-  const res = await fetch(url, { method:'GET', cache:'no-store' });
-  if(!res.ok) throw new Error(`FinMind HTTP ${res.status}`);
-  const json = await res.json();
+  const txt = await fetchTextWithFallback(url);
+  let json;
+  try{ json = JSON.parse(txt); }catch(e){ throw new Error('API 回傳不是 JSON'); }
   if(json.status !== 200 && json.status !== '200') throw new Error(json.msg || 'FinMind 回傳錯誤');
   const data = json.data || [];
   if(!data.length) throw new Error('查無資料或代號不支援');
@@ -104,16 +124,7 @@ async function fetchUSFromStooq(symbol){
   // 美股備援：不用 Token。Stooq 代號格式 TSLA.US、SPY.US、QQQ.US。
   const directUrl = `https://stooq.com/q/d/l/?s=${encodeURIComponent(symbol.toLowerCase()+'.us')}&i=d`;
   const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(directUrl)}`;
-  let text = '';
-  try {
-    const res = await fetch(directUrl, {cache:'no-store'});
-    if(!res.ok) throw new Error('direct fail');
-    text = await res.text();
-  } catch(_) {
-    const res = await fetch(proxyUrl, {cache:'no-store'});
-    if(!res.ok) throw new Error(`美股備援 HTTP ${res.status}`);
-    text = await res.text();
-  }
+  const text = await fetchTextWithFallback(directUrl);
   const lines = text.trim().split(/\r?\n/).filter(Boolean);
   if(lines.length < 3) throw new Error('美股資料不足');
   const rows = lines.slice(1).map(line=>{
