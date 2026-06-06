@@ -7,20 +7,31 @@ const defaultList = [
 ];
 
 let watchList = JSON.parse(localStorage.getItem('broWatchList') || 'null') || defaultList;
+let finmindToken = localStorage.getItem('finmindToken') || '';
 
 const cardsEl = document.getElementById('cards');
 const lastUpdatedEl = document.getElementById('lastUpdated');
 const dataStatusEl = document.getElementById('dataStatus');
 const kdAlertEl = document.getElementById('kdAlert');
 const marketNoteEl = document.getElementById('marketNote');
+const tokenInput = document.getElementById('tokenInput');
+const tokenBox = document.getElementById('tokenBox');
+
+if (finmindToken) {
+  tokenInput.value = '已儲存，按清除可重貼';
+  tokenBox.classList.add('saved');
+}
 
 function saveList(){ localStorage.setItem('broWatchList', JSON.stringify(watchList)); }
 function twDate(){ return new Date().toLocaleString('zh-TW',{hour12:false}); }
 function pct(n){ return Number.isFinite(n) ? `${n.toFixed(2)}%` : '--'; }
-function money(n){ return Number.isFinite(n) ? (n >= 1000 ? n.toFixed(2) : n.toFixed(2)) : '--'; }
+function money(n){ return Number.isFinite(n) ? n.toFixed(2) : '--'; }
 function cls(n){ return n > 0 ? 'up' : n < 0 ? 'down' : 'flat'; }
 function sign(n){ return n > 0 ? '+' : ''; }
 function inferMarket(s){ return /^\d{4}$/.test(s) || /^00\d{2}$/.test(s) ? 'TW' : 'US'; }
+function isoDate(d){ return d.toISOString().slice(0,10); }
+function startDate(months=8){ const d = new Date(); d.setMonth(d.getMonth()-months); return isoDate(d); }
+function endDate(){ return isoDate(new Date()); }
 
 function renderSkeleton(){
   cardsEl.innerHTML = '';
@@ -28,7 +39,7 @@ function renderSkeleton(){
     const div = document.createElement('article');
     div.className = 'card loading';
     div.innerHTML = `${idx >= defaultList.length ? '<button class="removeBtn" onclick="removeSymbol('+idx+')">移除</button>' : ''}
-      <div class="symbol">${item.symbol}</div><div class="name">${item.name || item.symbol}</div>
+      <div class="symbol">${item.market}・${item.symbol}</div><div class="name">${item.name || item.symbol}</div>
       <div class="price">載入中</div><div class="change flat">--</div>
       <div class="meta"><div class="pill"><span>KD-K</span><b>--</b></div><div class="pill"><span>RSI</span><b>--</b></div></div>`;
     cardsEl.appendChild(div);
@@ -51,7 +62,7 @@ function renderCard(item, quote, idx){
       <div class="pill"><span>KD-K</span><b>${Number.isFinite(quote.k) ? quote.k.toFixed(1) : '--'}</b></div>
       <div class="pill"><span>RSI-14</span><b>${Number.isFinite(quote.rsi) ? quote.rsi.toFixed(1) : '--'}</b></div>
       <div class="pill"><span>MA5</span><b>${money(quote.ma5)}</b></div>
-      <div class="pill"><span>MA20</span><b>${money(quote.ma20)}</b></div>
+      <div class="pill"><span>日期</span><b>${quote.date || '--'}</b></div>
     </div>`;
   cardsEl.appendChild(div);
 }
@@ -68,54 +79,42 @@ function sparkline(arr){
   return `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`;
 }
 
-async function fetchTwQuote(symbol){
-  const rt = await fetch(`https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${symbol}.tw&json=1&delay=0&_=${Date.now()}`);
-  const json = await rt.json();
-  const m = json.msgArray && json.msgArray[0];
-  if(!m) throw new Error('台股行情暫無資料');
-  const price = parseFloat(m.z !== '-' ? m.z : m.y);
-  const prev = parseFloat(m.y);
-  const hist = await fetchTwHistory(symbol);
-  const tech = calcTech(hist.close, hist.high, hist.low);
-  return { price, previousClose: prev, change: price - prev, changePercent: (price-prev)/prev*100, ...tech, closeHistory: hist.close };
-}
-
-async function fetchTwHistory(symbol){
-  const now = new Date();
-  let all = [];
-  for(let back=0; back<4; back++){
-    const d = new Date(now.getFullYear(), now.getMonth()-back, 1);
-    const y = d.getFullYear();
-    const m = String(d.getMonth()+1).padStart(2,'0');
-    try{
-      const res = await fetch(`https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY?date=${y}${m}01&stockNo=${symbol}&response=json&_=${Date.now()}`);
-      const j = await res.json();
-      if(j.data){ all = j.data.concat(all); }
-    }catch(e){}
-  }
-  const rows = all.map(r=>({
-    close: num(r[6]), high: num(r[4]), low: num(r[5])
-  })).filter(r=>Number.isFinite(r.close));
-  return { close: rows.map(r=>r.close), high: rows.map(r=>r.high), low: rows.map(r=>r.low) };
-}
-
-function num(s){ return parseFloat(String(s).replace(/,/g,'')); }
-
-async function fetchUsQuote(symbol){
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=3mo&interval=1d&_=${Date.now()}`;
-  const res = await fetch(url);
+async function finmindFetch(dataset, symbol){
+  if(!finmindToken) throw new Error('請先貼上 FinMind Token');
+  const params = new URLSearchParams({
+    dataset,
+    data_id: symbol,
+    start_date: startDate(10),
+    end_date: endDate()
+  });
+  const res = await fetch(`https://api.finmindtrade.com/api/v4/data?${params.toString()}`, {
+    headers: { Authorization: `Bearer ${finmindToken}` }
+  });
+  if(!res.ok) throw new Error(`API 錯誤 ${res.status}`);
   const json = await res.json();
-  const result = json.chart && json.chart.result && json.chart.result[0];
-  if(!result) throw new Error('美股行情暫無資料');
-  const meta = result.meta;
-  const q = result.indicators.quote[0];
-  const close = q.close.filter(Number.isFinite);
-  const high = q.high.filter(Number.isFinite);
-  const low = q.low.filter(Number.isFinite);
-  const price = meta.regularMarketPrice ?? close[close.length-1];
-  const prev = meta.chartPreviousClose ?? close[close.length-2];
+  if(json.status !== 200 && json.status !== '200') throw new Error(json.msg || 'FinMind 回傳錯誤');
+  const data = json.data || [];
+  if(!data.length) throw new Error('查無資料或代號不支援');
+  return data;
+}
+
+async function fetchQuote(item){
+  const dataset = item.market === 'TW' ? 'TaiwanStockPrice' : 'USStockPrice';
+  const data = await finmindFetch(dataset, item.symbol);
+  const rows = data.map(r=>({
+    date: r.date,
+    close: Number(r.close),
+    high: Number(r.max ?? r.high),
+    low: Number(r.min ?? r.low),
+    open: Number(r.open)
+  })).filter(r=>Number.isFinite(r.close) && Number.isFinite(r.high) && Number.isFinite(r.low));
+  rows.sort((a,b)=>a.date.localeCompare(b.date));
+  if(rows.length < 2) throw new Error('資料筆數不足');
+  const last = rows[rows.length-1];
+  const prev = rows[rows.length-2];
+  const close = rows.map(r=>r.close), high = rows.map(r=>r.high), low = rows.map(r=>r.low);
   const tech = calcTech(close, high, low);
-  return { price, previousClose: prev, change: price-prev, changePercent:(price-prev)/prev*100, ...tech, closeHistory: close };
+  return { price:last.close, previousClose:prev.close, change:last.close-prev.close, changePercent:(last.close-prev.close)/prev.close*100, ...tech, closeHistory:close, date:last.date };
 }
 
 function calcTech(close, high, low){
@@ -152,14 +151,14 @@ function calcKD(close, high, low, period){
 async function loadAll(){
   renderSkeleton();
   dataStatusEl.textContent = '讀取中';
-  marketNoteEl.textContent = '正在抓取公開行情資料';
+  marketNoteEl.textContent = finmindToken ? '正在抓取 FinMind 真實日線資料' : '請先儲存 FinMind Token';
   cardsEl.innerHTML = '';
   let ok = 0;
   let quote0050 = null;
   for(let i=0;i<watchList.length;i++){
     const item = watchList[i];
     try{
-      const quote = item.market === 'TW' ? await fetchTwQuote(item.symbol) : await fetchUsQuote(item.symbol);
+      const quote = await fetchQuote(item);
       renderCard(item, quote, i); ok++;
       if(item.symbol === '0050') quote0050 = quote;
     }catch(e){
@@ -168,7 +167,7 @@ async function loadAll(){
   }
   lastUpdatedEl.textContent = twDate();
   dataStatusEl.textContent = ok === watchList.length ? '真實資料已更新' : `部分成功 ${ok}/${watchList.length}`;
-  marketNoteEl.textContent = '免費公開資料可能延遲；休市時顯示最後交易資料';
+  marketNoteEl.textContent = '資料來自 FinMind；顯示最後交易日資料，非券商下單即時報價';
   updateKdAlert(quote0050);
 }
 
@@ -188,6 +187,22 @@ document.getElementById('addBtn').addEventListener('click', ()=>{
   watchList.push({symbol:s, name:s, market});
   input.value=''; saveList(); loadAll();
 });
+document.getElementById('saveTokenBtn').addEventListener('click', ()=>{
+  const v = tokenInput.value.trim();
+  if(!v || v.includes('已儲存')) return;
+  finmindToken = v;
+  localStorage.setItem('finmindToken', finmindToken);
+  tokenInput.value = '已儲存，按清除可重貼';
+  tokenBox.classList.add('saved');
+  loadAll();
+});
+document.getElementById('clearTokenBtn').addEventListener('click', ()=>{
+  localStorage.removeItem('finmindToken');
+  finmindToken = '';
+  tokenInput.value = '';
+  tokenBox.classList.remove('saved');
+  loadAll();
+});
 
 loadAll();
-setInterval(loadAll, 60_000);
+setInterval(loadAll, 5 * 60_000);

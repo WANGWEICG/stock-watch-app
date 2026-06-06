@@ -14,10 +14,20 @@
       <div>
         <div class="eyebrow">BRO STOCK WATCH PRO</div>
         <h1>兄弟看盤 Pro</h1>
-        <p id="marketNote">載入真實行情中...</p>
+        <p id="marketNote">使用 FinMind 真實日線資料載入行情中...</p>
       </div>
       <button id="refreshBtn" class="refresh">更新</button>
     </header>
+
+    <section class="tokenBox" id="tokenBox">
+      <h2>FinMind Token</h2>
+      <p>為了避免你的 Token 公開在 GitHub 程式碼裡，請在這裡貼一次，會只存在你手機瀏覽器。</p>
+      <div class="addRow">
+        <input id="tokenInput" placeholder="貼上 FinMind API Token" autocomplete="off" />
+        <button id="saveTokenBtn">儲存</button>
+      </div>
+      <button id="clearTokenBtn" class="ghostBtn">清除 Token</button>
+    </section>
 
     <section class="statusPanel">
       <div>
@@ -44,12 +54,12 @@
         <input id="symbolInput" placeholder="例如 2330、2317、AAPL、NVDA" />
         <button id="addBtn">加入</button>
       </div>
-      <p class="hint">台股上市用代號即可，例如 2330；美股用英文代號，例如 TSLA。</p>
+      <p class="hint">台股輸入代號即可，例如 2330、0050；美股輸入英文代號，例如 TSLA、SPY。</p>
     </section>
 
     <section class="disclaimer">
       <h2>資料說明</h2>
-      <p>台股即時欄位嘗試使用臺灣證交所公開行情服務；美股使用 Yahoo Finance Chart API。免費公開資料可能延遲、休市時不更新，或因瀏覽器 CORS / API 限制暫時讀不到。</p>
+      <p>本版改用 FinMind API 的真實歷史日線資料計算價格、漲跌、KD、RSI、MA。免費資料通常不是券商級逐秒即時報價，休市時會顯示最後交易日資料。</p>
       <p>這是看盤輔助工具，不是投資建議，也不是券商下單系統。</p>
     </section>
   </div>
