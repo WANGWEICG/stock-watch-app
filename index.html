@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>兄弟看盤｜台股看盤軟體</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="style.css" />
+  <meta name="theme-color" content="#0f172a" />
+</head>
+<body>
+  <div class="app">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">BRO STOCK WATCH</p>
+        <h1>兄弟看盤</h1>
+        <p class="subtitle">台股自選股、0050/0056、KD/RSI/均線、價格警示，一頁搞定。</p>
+      </div>
+      <div class="market-clock">
+        <span id="today"></span>
+        <strong id="marketStatus">判斷中</strong>
+      </div>
+    </header>
+
+    <section class="toolbar card">
+      <div>
+        <label>股票代號</label>
+        <input id="symbolInput" inputmode="numeric" placeholder="例如 0050、2330" />
+      </div>
+      <button id="addBtn">加入自選</button>
+      <button id="refreshBtn" class="ghost">更新資料</button>
+      <button id="demoBtn" class="ghost">切換示範資料</button>
+    </section>
+
+    <main class="grid">
+      <section class="card watchlist-card">
+        <div class="section-title">
+          <h2>自選股</h2>
+          <small>預設追蹤 0050 / 0056 / 2330</small>
+        </div>
+        <div id="watchlist" class="watchlist"></div>
+      </section>
+
+      <section class="card detail-card">
+        <div class="section-title">
+          <h2 id="detailName">選擇一檔股票</h2>
+          <small id="detailMeta">點左邊自選股查看詳細資料</small>
+        </div>
+        <canvas id="chart" height="210"></canvas>
+        <div class="metrics" id="metrics"></div>
+        <div class="alert-box">
+          <h3>價格 / KD 警示</h3>
+          <div class="alert-row">
+            <input id="alertPrice" type="number" step="0.01" placeholder="目標價，例如 100" />
+            <select id="alertType">
+              <option value="above">高於</option>
+              <option value="below">低於</option>
+            </select>
+            <button id="saveAlertBtn">儲存警示</button>
+          </div>
+          <p class="hint">提醒：網頁版只能在打開頁面時檢查；要背景推播需要後端或手機 App。</p>
+          <div id="alerts"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
